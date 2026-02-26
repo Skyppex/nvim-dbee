@@ -27,8 +27,11 @@ local config = {}
 ---Configuration for result UI tile.
 ---@alias result_config { focus_result: boolean, mappings: key_mapping[], page_size: integer, progress: progress_config, window_options: table<string, any>, buffer_options: table<string, any> }
 
+---Configuration for project notes in the editor.
+---@alias project_notes_config { patterns: string[], disable: boolean }
+
 ---Configuration for editor UI tile.
----@alias editor_config { directory: string, mappings: key_mapping[], window_options: table<string, any>, buffer_options: table<string, any> }
+---@alias editor_config { directory: string, mappings: key_mapping[], window_options: table<string, any>, buffer_options: table<string, any>, project_notes: project_notes_config }
 
 ---Configuration for call log UI tile.
 ---@alias call_log_config { mappings: key_mapping[], disable_candies: boolean, candies: table<string, Candy>, window_options: table<string, any>, buffer_options: table<string, any> }
@@ -263,6 +266,14 @@ config.default = {
     -- directory where to store the scratchpads.
     --directory = "path/to/scratchpad/dir",
 
+    -- project notes: scan the working directory for matching files
+    project_notes = {
+      -- file patterns to scan for (globs matched by extension)
+      patterns = { "*.sql" },
+      -- set to true to disable project notes
+      disable = false,
+    },
+
     -- mappings for the buffer
     mappings = {
       -- run what's currently selected on the active connection
@@ -357,6 +368,9 @@ function config.validate(cfg)
     result_progress = { cfg.result.progress, "table" },
     result_mappings = { cfg.result.mappings, "table" },
     editor_mappings = { cfg.editor.mappings, "table" },
+    editor_project_notes = { cfg.editor.project_notes, "table" },
+    editor_project_notes_patterns = { cfg.editor.project_notes.patterns, "table" },
+    editor_project_notes_disable = { cfg.editor.project_notes.disable, "boolean" },
     call_log_mappings = { cfg.call_log.mappings, "table" },
 
     window_layout = { cfg.window_layout, "table" },

@@ -18,6 +18,8 @@ local welcome = require("dbee.ui.editor.welcome")
 ---@field private event_callbacks table<editor_event_name, event_listener[]> callbacks for events
 ---@field private window_options table<string, any> a table of window options.
 ---@field private buffer_options table<string, any> a table of buffer options for all notes.
+---@field private project_patterns string[] glob patterns for project file discovery
+---@field private project_disabled boolean whether project notes are disabled
 local EditorUI = {}
 
 ---@param handler Handler
@@ -34,6 +36,8 @@ function EditorUI:new(handler, result, opts)
     error("no Result provided to EditorTile")
   end
 
+  local project_notes = opts.project_notes or {}
+
   -- class object
   ---@type EditorUI
   local o = {
@@ -49,6 +53,8 @@ function EditorUI:new(handler, result, opts)
       swapfile = false,
       filetype = "sql",
     }, opts.buffer_options or {}),
+    project_patterns = project_notes.patterns or { "*.sql" },
+    project_disabled = project_notes.disable or false,
   }
   setmetatable(o, self)
   self.__index = self
@@ -262,6 +268,9 @@ function EditorUI:namespace_create_note(id, name)
   if not namespace or namespace == "" then
     error("invalid namespace id")
   end
+  if namespace == "project" then
+    error("cannot create notes in the project namespace")
+  end
   if not name or name == "" then
     error("no name for global note")
   end
@@ -333,12 +342,141 @@ function EditorUI:load_notes_from_disk(namespace_id)
   return ret
 end
 
+---@return boolean
+function EditorUI:is_project_disabled()
+  return self.project_disabled
+end
+
+-- Extracts file extensions from glob patterns like "*.sql" -> "sql"
+---@private
+---@param patterns string[]
+---@return string[]
+local function extensions_from_patterns(patterns)
+  local exts = {}
+  for _, pat in ipairs(patterns) do
+    local ext = pat:match("^%*%.(.+)$")
+    if ext then
+      table.insert(exts, ext)
+    end
+  end
+  return exts
+end
+
+-- Discovers project files matching configured patterns from the working directory.
+---@private
+function EditorUI:discover_project_files()
+  if self.project_disabled then
+    self.notes["project"] = {}
+    return
+  end
+
+  local root = vim.fn.getcwd()
+  -- ensure root ends without trailing slash for consistent relative path computation
+  root = root:gsub("/$", "")
+
+  local files = {}
+  local exts = extensions_from_patterns(self.project_patterns)
+
+  if #exts == 0 then
+    self.notes["project"] = {}
+    return
+  end
+
+  if vim.fn.executable("fd") == 1 then
+    -- use fd for fast discovery
+    local args = { "fd", "-t", "f", "--color", "never" }
+    for _, ext in ipairs(exts) do
+      table.insert(args, "-e")
+      table.insert(args, ext)
+    end
+    local result = vim.fn.systemlist(args, nil)
+    if vim.v.shell_error == 0 and result then
+      for _, line in ipairs(result) do
+        if line ~= "" then
+          -- fd outputs paths relative to cwd by default
+          local rel = line
+          local abs = root .. "/" .. rel
+          table.insert(files, { rel = rel, abs = abs })
+        end
+      end
+    end
+  else
+    -- fallback: use vim.fs.find
+    local ext_set = {}
+    for _, ext in ipairs(exts) do
+      ext_set["." .. ext] = true
+    end
+
+    local found = vim.fs.find(function(name)
+      for suffix in pairs(ext_set) do
+        if vim.endswith(name, suffix) then
+          return true
+        end
+      end
+      return false
+    end, { path = root, type = "file", limit = math.huge })
+
+    for _, abs in ipairs(found) do
+      local rel = abs:sub(#root + 2) -- strip root prefix and the slash
+      table.insert(files, { rel = rel, abs = abs })
+    end
+  end
+
+  -- sort by relative path
+  table.sort(files, function(a, b)
+    return a.rel < b.rel
+  end)
+
+  -- build note_details
+  local notes = {}
+  for _, f in ipairs(files) do
+    local id = f.abs .. utils.random_string()
+    notes[id] = {
+      id = id,
+      name = f.rel,
+      file = f.abs,
+    }
+  end
+
+  self.notes["project"] = notes
+end
+
+-- Returns project notes, discovering them lazily on first call.
+---@return note_details[]
+function EditorUI:get_project_notes()
+  if self.project_disabled then
+    return {}
+  end
+
+  if not self.notes["project"] then
+    self:discover_project_files()
+  end
+
+  local notes_list = vim.tbl_values(self.notes["project"])
+  table.sort(notes_list, function(k1, k2)
+    return k1.name < k2.name
+  end)
+  return notes_list
+end
+
+-- Re-discovers project files. Called on explicit drawer refresh.
+function EditorUI:refresh_project_notes()
+  if self.project_disabled then
+    return
+  end
+  self.notes["project"] = nil
+  self:discover_project_files()
+end
+
 -- Removes an existing note.
 -- Errors if there is no note with provided id in namespace.
 ---@param id namespace_id
 ---@param note_id note_id
 function EditorUI:namespace_remove_note(id, note_id)
   local namespace = id
+  if namespace == "project" then
+    error("cannot remove notes from the project namespace")
+  end
   if not self.notes[namespace] then
     error("invalid namespace id to remove the note from")
   end
@@ -366,6 +504,9 @@ function EditorUI:note_rename(id, name)
   local note, namespace = self:search_note(id)
   if not note then
     error("invalid note id to rename")
+  end
+  if namespace == "project" then
+    error("cannot rename notes in the project namespace")
   end
   if not name or name == "" then
     error("invalid name")
@@ -446,13 +587,20 @@ function EditorUI:display_note(id)
 
   -- otherwise open a file and update note's buffer
   vim.api.nvim_set_current_win(self.winid)
-  vim.cmd("e " .. note.file)
+  vim.cmd("e " .. vim.fn.fnameescape(note.file))
 
   local bufnr = vim.api.nvim_get_current_buf()
   self.notes[namespace][id].bufnr = bufnr
 
   -- configure options and mappings on new buffer
-  common.configure_buffer_options(bufnr, self.buffer_options)
+  -- for project notes, don't force buffer options (let neovim detect filetype)
+  if namespace == "project" then
+    local opts_without_ft = vim.tbl_extend("force", self.buffer_options, {})
+    opts_without_ft.filetype = nil
+    common.configure_buffer_options(bufnr, opts_without_ft)
+  else
+    common.configure_buffer_options(bufnr, self.buffer_options)
+  end
   common.configure_buffer_mappings(bufnr, self:get_actions(), self.mappings)
 end
 
