@@ -101,6 +101,22 @@ function DrawerUI:new(handler, editor, result, opts)
     o:on_current_connection_changed(data)
   end)
 
+  handler:register_event_listener("structure_loaded", function(_)
+    o:refresh()
+  end)
+
+  handler:register_event_listener("databases_listed", function(_)
+    o:refresh()
+  end)
+
+  handler:register_event_listener("database_selected", function(_)
+    o:refresh()
+  end)
+
+  handler:register_event_listener("database_select_failed", function(data)
+    vim.notify("Failed to switch database: " .. tostring(data.error), vim.log.levels.ERROR)
+  end)
+
   editor:register_event_listener("current_note_changed", function(data)
     o:on_current_note_changed(data)
   end)
@@ -116,7 +132,9 @@ function DrawerUI:on_current_connection_changed(data)
     return
   end
   self.current_conn_id = data.conn_id
-  self:refresh()
+  vim.schedule(function()
+    self:refresh()
+  end)
 end
 
 -- event listener for current note change
@@ -127,7 +145,9 @@ function DrawerUI:on_current_note_changed(data)
     return
   end
   self.current_note_id = data.note_id
-  self:refresh()
+  vim.schedule(function()
+    self:refresh()
+  end)
 end
 
 ---@private
@@ -221,7 +241,9 @@ function DrawerUI:get_actions()
     end
 
     action(function()
-      self:refresh()
+      vim.schedule(function()
+        self:refresh()
+      end)
     end, function(opts)
       opts = opts or {}
       menu.select {

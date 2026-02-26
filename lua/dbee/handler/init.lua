@@ -267,6 +267,48 @@ function Handler:connection_select_database(id, database)
   vim.fn.DbeeConnectionSelectDatabase(id, database)
 end
 
+-- Async: fires off structure fetch in a goroutine. Listen for "structure_loaded" event.
+---@param id connection_id
+function Handler:connection_get_structure_async(id)
+  vim.fn.DbeeConnectionGetStructureAsync(id)
+end
+
+-- Async: fires off database list fetch in a goroutine. Listen for "databases_listed" event.
+---@param id connection_id
+function Handler:connection_list_databases_async(id)
+  vim.fn.DbeeConnectionListDatabasesAsync(id)
+end
+
+-- Async: fires off database switch in a goroutine. Listen for "database_selected" event.
+---@param id connection_id
+---@param database string
+function Handler:connection_select_database_async(id, database)
+  vim.fn.DbeeConnectionSelectDatabaseAsync(id, database)
+end
+
+-- Returns cached structure from a previous async fetch, or nil if not cached.
+---@param id connection_id
+---@return DBStructure[]?
+function Handler:connection_get_structure_cached(id)
+  local ret = vim.fn.DbeeConnectionGetStructureCached(id)
+  if not ret or ret == vim.NIL then
+    return nil
+  end
+  return ret
+end
+
+-- Returns cached database list from a previous async fetch, or nil if not cached.
+---@param id connection_id
+---@return string? current_db
+---@return string[]? available_dbs
+function Handler:connection_list_databases_cached(id)
+  local ret = vim.fn.DbeeConnectionListDatabasesCached(id)
+  if not ret or ret == vim.NIL then
+    return nil, nil
+  end
+  return unpack(ret)
+end
+
 ---@param id connection_id
 ---@return CallDetails[]
 function Handler:connection_get_calls(id)

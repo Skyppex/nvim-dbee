@@ -88,23 +88,38 @@ local function connection_nodes(handler, conn, result)
     return nodes
   end
 
-  -- recursively parse structure to drawer nodes
-  local nodes = to_tree_nodes(handler:connection_get_structure(conn.id), conn.id)
+  -- try cached structure first; if not available, fire async fetch and return loading placeholder
+  local structure = handler:connection_get_structure_cached(conn.id)
+  if not structure then
+    -- kick off async fetch — drawer will refresh when "structure_loaded" event fires
+    handler:connection_get_structure_async(conn.id)
+    handler:connection_list_databases_async(conn.id)
+    return {
+      NuiTree.Node {
+        id = conn.id .. "__loading__",
+        name = "loading...",
+        type = "",
+      },
+    }
+  end
 
-  -- database switching
-  local current_db, available_dbs = handler:connection_list_databases(conn.id)
-  if current_db ~= "" and #available_dbs > 0 then
+  -- recursively parse structure to drawer nodes
+  local nodes = to_tree_nodes(structure, conn.id)
+
+  -- database switching (also from cache)
+  local current_db, available_dbs = handler:connection_list_databases_cached(conn.id)
+  if current_db and current_db ~= "" and available_dbs and #available_dbs > 0 then
     local ly = NuiTree.Node {
       id = conn.id .. "_database_switch__",
       name = current_db,
       type = "database_switch",
-      action_1 = function(cb, select)
+      action_1 = function(_, select)
         select {
           title = "Select a Database",
           items = available_dbs,
           on_confirm = function(selection)
-            handler:connection_select_database(conn.id, selection)
-            cb()
+            -- fire async database switch — drawer refreshes on "database_selected" event
+            handler:connection_select_database_async(conn.id, selection)
           end,
         }
       end,
@@ -234,9 +249,10 @@ local function handler_real_nodes(handler, result)
         name = conn.name,
         type = "connection",
         -- set connection as active manually
-        action_1 = function(cb)
+        action_1 = function(_)
+          -- set_current_connection fires "current_connection_changed" event
+          -- which refreshes the drawer, so no need to call cb() here
           handler:set_current_connection(conn.id)
-          cb()
         end,
         -- edit connection
         action_2 = edit_action,
@@ -409,9 +425,10 @@ local function editor_namespace_nodes(editor, namespace, refresh)
       id = note.id,
       name = note.name .. modified_suffix(note.bufnr, refresh),
       type = "note",
-      action_1 = function(cb)
+      action_1 = function(_)
+        -- note: set_current_note triggers "current_note_changed" event
+        -- which refreshes the drawer, so no need to call cb() here
         editor:set_current_note(note.id)
-        cb()
       end,
       action_2 = function(cb, _, input)
         input {

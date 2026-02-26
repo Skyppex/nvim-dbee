@@ -9,7 +9,6 @@ function M.set(tree, expansion)
     if t then
       local node = tree:get_node(id) --[[@as DrawerUINode]]
       if node then
-        -- if function for getting layout exist, call it
         if type(node.lazy_children) == "function" then
           tree:set_nodes(node.lazy_children(), node.id)
         end
