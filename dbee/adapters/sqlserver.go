@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/microsoft/go-mssqldb"
+	"github.com/microsoft/go-mssqldb/azuread"
 	_ "github.com/microsoft/go-mssqldb/integratedauth/krb5"
 
 	"github.com/kndndrj/nvim-dbee/dbee/core"
@@ -31,7 +32,14 @@ func (s *SQLServer) Connect(url string) (core.Driver, error) {
 		return nil, fmt.Errorf("could not parse db connection string: %w: ", err)
 	}
 
-	db, err := sql.Open("sqlserver", u.String())
+	// Use the azuresql driver when federated auth is requested (Entra ID / Azure AD),
+	// otherwise use the standard sqlserver driver.
+	driverName := "sqlserver"
+	if u.Query().Get("fedauth") != "" {
+		driverName = azuread.DriverName
+	}
+
+	db, err := sql.Open(driverName, u.String())
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect to sqlserver database: %v", err)
 	}
@@ -54,7 +62,8 @@ func (s *SQLServer) Connect(url string) (core.Driver, error) {
 					return id
 				}),
 		),
-		url: u,
+		url:        u,
+		driverName: driverName,
 	}, nil
 }
 

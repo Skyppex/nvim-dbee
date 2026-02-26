@@ -17,8 +17,9 @@ var (
 )
 
 type sqlServerDriver struct {
-	c   *builders.Client
-	url *nurl.URL
+	c          *builders.Client
+	url        *nurl.URL
+	driverName string
 }
 
 func (c *sqlServerDriver) Query(ctx context.Context, query string) (core.ResultStream, error) {
@@ -87,7 +88,7 @@ func (c *sqlServerDriver) SelectDatabase(name string) error {
 	q.Set("database", name)
 	c.url.RawQuery = q.Encode()
 
-	db, err := sql.Open("sqlserver", c.url.String())
+	db, err := sql.Open(c.driverName, c.url.String())
 	if err != nil {
 		return fmt.Errorf("unable to switch databases: %w", err)
 	}
