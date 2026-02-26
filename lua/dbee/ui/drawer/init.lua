@@ -267,6 +267,7 @@ function DrawerUI:get_actions()
 
   return {
     refresh = function()
+      self.editor:refresh_project_notes()
       self:refresh()
     end,
     action_1 = function()

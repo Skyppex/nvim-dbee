@@ -463,6 +463,99 @@ local function editor_namespace_nodes(editor, namespace, refresh)
   return nodes
 end
 
+-- Builds a nested tree of DrawerUINode from project notes.
+-- Files are organized into a directory tree based on their relative paths.
+---@param editor EditorUI
+---@param refresh fun() function that refreshes the tree
+---@return DrawerUINode[]
+local function editor_project_nodes(editor, refresh)
+  local notes = editor:get_project_notes()
+  if #notes == 0 then
+    return {}
+  end
+
+  -- Build an intermediate nested table from relative paths.
+  -- Each directory is a table with a __children key for subdirs/files.
+  -- Files are stored as { __note = note_details }.
+  local root = {}
+
+  for _, note in ipairs(notes) do
+    local parts = vim.split(note.name, "/", { plain = true })
+    local current = root
+    for i = 1, #parts - 1 do
+      local dir = parts[i]
+      if not current[dir] then
+        current[dir] = {}
+      end
+      current = current[dir]
+    end
+    -- leaf entry: store the note
+    local filename = parts[#parts]
+    current[filename] = { __note = note }
+  end
+
+  -- Recursively convert the nested table into NuiTree nodes.
+  ---@param tree_table table
+  ---@param parent_id string
+  ---@return DrawerUINode[]
+  local function build_nodes(tree_table, parent_id)
+    -- separate directories from files
+    local dirs = {}
+    local files = {}
+    for key, value in pairs(tree_table) do
+      if value.__note then
+        table.insert(files, { key = key, note = value.__note })
+      else
+        table.insert(dirs, { key = key, children = value })
+      end
+    end
+
+    -- sort both alphabetically
+    table.sort(dirs, function(a, b)
+      return a.key < b.key
+    end)
+    table.sort(files, function(a, b)
+      return a.key < b.key
+    end)
+
+    ---@type DrawerUINode[]
+    local nodes = {}
+
+    -- directories first
+    for _, dir in ipairs(dirs) do
+      local dir_id = parent_id .. "/" .. dir.key
+      local children = build_nodes(dir.children, dir_id)
+      local node = NuiTree.Node({
+        id = dir_id,
+        name = dir.key,
+        type = "",
+      }, children) --[[@as DrawerUINode]]
+      table.insert(nodes, node)
+    end
+
+    -- then files
+    for _, file in ipairs(files) do
+      local note = file.note
+      local node = NuiTree.Node {
+        id = note.id,
+        name = file.key .. modified_suffix(note.bufnr, refresh),
+        type = "note",
+        action_1 = function(_)
+          -- note: set_current_note triggers "current_note_changed" event
+          -- which refreshes the drawer, so no need to call cb() here
+          editor:set_current_note(note.id)
+        end,
+        -- no action_2/action_3: project notes are read-only in the drawer
+      } --[[@as DrawerUINode]]
+      table.insert(nodes, node)
+    end
+
+    return nodes
+  end
+
+  return build_nodes(root, "__project")
+end
+
 ---@param editor EditorUI
 ---@param current_connection_id connection_id
 ---@param refresh fun() function that refreshes the tree
@@ -480,6 +573,22 @@ function M.editor_nodes(editor, current_connection_id, refresh)
     nodes[1]:expand()
   end
 
+  -- project notes (files discovered from working directory)
+  if not editor:is_project_disabled() then
+    local project_children = editor_project_nodes(editor, refresh)
+    local project_node = NuiTree.Node({
+      id = "__master_note_project__",
+      name = "project notes",
+      type = "note",
+    }, project_children) --[[@as DrawerUINode]]
+
+    if utils.once("editor_project_expand") then
+      project_node:expand()
+    end
+
+    table.insert(nodes, project_node)
+  end
+
   if current_connection_id then
     table.insert(
       nodes,
@@ -490,7 +599,7 @@ function M.editor_nodes(editor, current_connection_id, refresh)
       }, editor_namespace_nodes(editor, current_connection_id, refresh))
     )
     if utils.once("editor_local_expand") then
-      nodes[2]:expand()
+      nodes[#nodes]:expand()
     end
   end
 
