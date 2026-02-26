@@ -126,7 +126,18 @@ editor_config                                                    *editor_config*
     Configuration for editor UI tile.
 
     Type: ~
-        {directory:string,mappings:key_mapping[],window_options:table<string,any>,buffer_options:table<string,any>}
+        {directory:string,mappings:key_mapping[],window_options:table<string,any>,buffer_options:table<string,any>,project_notes:project_notes_config}
+
+
+project_notes_config                                      *project_notes_config*
+    Configuration for project notes discovery.
+
+    Fields: ~
+        {patterns}  (string[]) Glob patterns for file discovery (default: { "*.sql" })
+        {disable}   (boolean) Set to true to disable project notes entirely
+
+    Type: ~
+        {patterns:string[],disable:boolean}
 
 
 call_log_config                                                *call_log_config*

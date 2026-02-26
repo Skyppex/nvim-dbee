@@ -363,6 +363,15 @@ Here are the defaults:
           -- run what's under the cursor to the next newline
           { key = "<CR>", mode = "n", action = "run_under_cursor" },
         },
+    
+        -- project notes: discover SQL files from the current working directory
+        -- these appear in the drawer under "project notes" as a directory tree
+        project_notes = {
+          -- glob patterns for file discovery (default: { "*.sql" })
+          patterns = { "*.sql" },
+          -- set to true to disable project notes entirely
+          disable = false,
+        },
       },
     
       -- call log window config
@@ -477,6 +486,14 @@ Here are a few steps to quickly get started:
         - Press `cw` to rename the scratchpad.
         - Press `dd` to delete it (also from disk).
         - Pressing `<CR>` on an existing scratchpad in the drawer will open it in the editor pane.
+    - Project Notes:
+        - SQL files discovered from your current working directory appear under "project notes".
+        - Files are displayed as a nested directory tree, organized alphabetically.
+        - Press `<CR>` to open a project file in the editor pane.
+        - Press `r` on the drawer to refresh and re-scan for project files.
+        - Project notes are read-only in the drawer (no rename/delete actions).
+        - Configure patterns via `editor.project_notes.patterns` (default: `{ "*.sql" }`).
+        - Disable with `editor.project_notes.disable = true`.
     - Help:
         - Just view the key bindings.
 - Once you selected the connection and created a scratchpad, you can navigate to
