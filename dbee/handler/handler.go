@@ -29,6 +29,15 @@ type Handler struct {
 	lookupConnectionCall map[core.ConnectionID][]core.CallID
 
 	currentConnectionID core.ConnectionID
+
+	// caches for async operations
+	structureCache map[core.ConnectionID][]*core.Structure
+	databasesCache map[core.ConnectionID]*databasesCacheEntry
+}
+
+type databasesCacheEntry struct {
+	Current   string
+	Available []string
 }
 
 func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
@@ -43,6 +52,9 @@ func New(vim *nvim.Nvim, logger *plugin.Logger) *Handler {
 		lookupConnection:     make(map[core.ConnectionID]*core.Connection),
 		lookupCall:           make(map[core.CallID]*core.Call),
 		lookupConnectionCall: make(map[core.ConnectionID][]core.CallID),
+
+		structureCache: make(map[core.ConnectionID][]*core.Structure),
+		databasesCache: make(map[core.ConnectionID]*databasesCacheEntry),
 	}
 
 	// restore the call log concurrently
@@ -271,6 +283,92 @@ func (h *Handler) ConnectionSelectDatabase(connID core.ConnectionID, database st
 	h.events.DatabaseSelected(connID, database)
 
 	return nil
+}
+
+// ConnectionGetStructureAsync fetches the structure in a goroutine and fires
+// a "structure_loaded" event when done. The result is cached so the sync
+// method can return it instantly.
+func (h *Handler) ConnectionGetStructureAsync(connID core.ConnectionID) {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		h.log.Infof("ConnectionGetStructureAsync: unknown connection: %s", connID)
+		return
+	}
+
+	go func() {
+		layout, err := c.GetStructure()
+		if err != nil {
+			h.log.Infof("ConnectionGetStructureAsync: %s", err)
+			h.events.StructureLoaded(connID, true)
+			return
+		}
+		h.structureCache[connID] = layout
+		h.events.StructureLoaded(connID, false)
+	}()
+}
+
+// ConnectionListDatabasesAsync fetches the database list in a goroutine and
+// fires a "databases_listed" event when done.
+func (h *Handler) ConnectionListDatabasesAsync(connID core.ConnectionID) {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		h.log.Infof("ConnectionListDatabasesAsync: unknown connection: %s", connID)
+		return
+	}
+
+	go func() {
+		currentDB, availableDBs, err := c.ListDatabases()
+		if err != nil {
+			if !errors.Is(err, core.ErrDatabaseSwitchingNotSupported) {
+				h.log.Infof("ConnectionListDatabasesAsync: %s", err)
+			}
+			h.events.DatabasesListed(connID, true)
+			return
+		}
+		h.databasesCache[connID] = &databasesCacheEntry{
+			Current:   currentDB,
+			Available: availableDBs,
+		}
+		h.events.DatabasesListed(connID, false)
+	}()
+}
+
+// ConnectionSelectDatabaseAsync switches the database in a goroutine and
+// fires the existing "database_selected" event when done.
+func (h *Handler) ConnectionSelectDatabaseAsync(connID core.ConnectionID, database string) {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		h.log.Infof("ConnectionSelectDatabaseAsync: unknown connection: %s", connID)
+		return
+	}
+
+	go func() {
+		err := c.SelectDatabase(database)
+		if err != nil {
+			h.log.Infof("ConnectionSelectDatabaseAsync: %s", err)
+			h.events.DatabaseSelectFailed(connID, err)
+			return
+		}
+		// invalidate caches for this connection
+		delete(h.structureCache, connID)
+		delete(h.databasesCache, connID)
+		h.events.DatabaseSelected(connID, database)
+	}()
+}
+
+// ConnectionGetStructureCached returns the cached structure, if available.
+func (h *Handler) ConnectionGetStructureCached(connID core.ConnectionID) ([]*core.Structure, bool) {
+	s, ok := h.structureCache[connID]
+	return s, ok
+}
+
+// ConnectionListDatabasesCached returns the cached database list, if available.
+func (h *Handler) ConnectionListDatabasesCached(connID core.ConnectionID) (string, []string, bool) {
+	entry, ok := h.databasesCache[connID]
+	if !ok {
+		return "", nil, false
+	}
+	return entry.Current, entry.Available, true
 }
 
 func (h *Handler) CallCancel(callID core.CallID) error {

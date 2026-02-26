@@ -171,6 +171,60 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			return nil, h.ConnectionSelectDatabase(args.ID, args.Database)
 		})
 
+	// Async endpoints: these return nothing, so isSync=false.
+	// Results are delivered via events.
+
+	p.RegisterEndpoint(
+		"DbeeConnectionGetStructureAsync",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		}) {
+			h.ConnectionGetStructureAsync(args.ID)
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionListDatabasesAsync",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		}) {
+			h.ConnectionListDatabasesAsync(args.ID)
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionSelectDatabaseAsync",
+		func(args *struct {
+			ID       core.ConnectionID `msgpack:",array"`
+			Database string
+		}) {
+			h.ConnectionSelectDatabaseAsync(args.ID, args.Database)
+		})
+
+	// Cached endpoints: return cached data from async operations.
+
+	p.RegisterEndpoint(
+		"DbeeConnectionGetStructureCached",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		}) (any, error) {
+			s, ok := h.ConnectionGetStructureCached(args.ID)
+			if !ok {
+				return nil, nil
+			}
+			return handler.WrapStructures(s), nil
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionListDatabasesCached",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		}) (any, error) {
+			current, available, ok := h.ConnectionListDatabasesCached(args.ID)
+			if !ok {
+				return nil, nil
+			}
+			return []any{current, available}, nil
+		})
+
 	p.RegisterEndpoint(
 		"DbeeCallCancel",
 		func(args *struct {

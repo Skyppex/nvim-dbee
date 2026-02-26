@@ -64,3 +64,33 @@ func (eb *eventBus) DatabaseSelected(id core.ConnectionID, dbname string) {
 
 	eb.callLua("database_selected", data)
 }
+
+// StructureLoaded is called when the async structure fetch completes.
+func (eb *eventBus) StructureLoaded(id core.ConnectionID, hasError bool) {
+	data := fmt.Sprintf(`{
+		conn_id = %q,
+		has_error = %t,
+	}`, id, hasError)
+
+	eb.callLua("structure_loaded", data)
+}
+
+// DatabasesListed is called when the async database list fetch completes.
+func (eb *eventBus) DatabasesListed(id core.ConnectionID, hasError bool) {
+	data := fmt.Sprintf(`{
+		conn_id = %q,
+		has_error = %t,
+	}`, id, hasError)
+
+	eb.callLua("databases_listed", data)
+}
+
+// DatabaseSelectFailed is called when an async database switch fails.
+func (eb *eventBus) DatabaseSelectFailed(id core.ConnectionID, err error) {
+	data := fmt.Sprintf(`{
+		conn_id = %q,
+		error = %q,
+	}`, id, err.Error())
+
+	eb.callLua("database_select_failed", data)
+}
