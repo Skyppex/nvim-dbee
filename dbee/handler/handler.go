@@ -102,7 +102,6 @@ func (h *Handler) CreateConnection(params *core.ConnectionParams) (core.Connecti
 	}
 
 	h.lookupConnection[c.GetID()] = c
-	_ = h.SetCurrentConnection(c.GetID())
 
 	return c.GetID(), nil
 }
@@ -187,9 +186,6 @@ func (h *Handler) ConnectionExecute(connID core.ConnectionID, query string) (*co
 	// add to lookup
 	h.lookupCall[id] = call
 	h.lookupConnectionCall[connID] = append(h.lookupConnectionCall[connID], id)
-
-	// update current call and conn
-	_ = h.SetCurrentConnection(connID)
 
 	return call, nil
 }

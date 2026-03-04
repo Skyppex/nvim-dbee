@@ -119,6 +119,7 @@ function EditorUI:get_actions()
 
       local conn = self.handler:get_current_connection()
       if not conn then
+        vim.notify("no connection selected - select a connection first", vim.log.levels.ERROR)
         return
       end
       local call = self.handler:connection_execute(conn.id, query)
@@ -132,6 +133,7 @@ function EditorUI:get_actions()
 
       local conn = self.handler:get_current_connection()
       if not conn then
+        vim.notify("no connection selected - select a connection first", vim.log.levels.ERROR)
         return
       end
       local call = self.handler:connection_execute(conn.id, query)
@@ -154,9 +156,12 @@ function EditorUI:get_actions()
 
         -- run the query
         local conn = self.handler:get_current_connection()
-        if conn then
-          self.result:set_call(self.handler:connection_execute(conn.id, query))
+        if not conn then
+          vim.api.nvim_buf_clear_namespace(bufnr, ns_id, 0, -1)
+          vim.notify("no connection selected - select a connection first", vim.log.levels.ERROR)
+          return
         end
+        self.result:set_call(self.handler:connection_execute(conn.id, query))
 
         -- remove highlighting after delay
         vim.defer_fn(function()
