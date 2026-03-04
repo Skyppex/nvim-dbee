@@ -607,6 +607,12 @@ function EditorUI:display_note(id)
     common.configure_buffer_options(bufnr, self.buffer_options)
   end
   common.configure_buffer_mappings(bufnr, self:get_actions(), self.mappings)
+
+  -- fire user autocmd for custom keymaps etc.
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "DbeeNoteOpened",
+    data = { bufnr = bufnr, winid = self.winid, note = note, namespace = namespace },
+  })
 end
 
 ---@param winid integer
