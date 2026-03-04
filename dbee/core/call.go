@@ -20,8 +20,8 @@ type (
 		timeTaken time.Duration
 		timestamp time.Time
 
-		result     *Result
-		archive    *archive
+		results    []*Result
+		archives   []*archive
 		cancelFunc func()
 
 		// any error that might occur during execution
@@ -70,15 +70,26 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	done := make(chan struct{})
 	close(done)
 
-	archive := newArchive(CallID(alias.ID))
+	archives := newArchives(CallID(alias.ID))
 	state := CallStateFromString(alias.State)
-	if state == CallStateArchived && archive.isEmpty() {
+	if state == CallStateArchived && len(archives) == 0 {
 		state = CallStateUnknown
 	}
 
 	var callErr error
 	if alias.Error != "" {
 		callErr = errors.New(alias.Error)
+	}
+
+	// Initialize results slice with same length as archives
+	results := make([]*Result, len(archives))
+	for i := range results {
+		results[i] = new(Result)
+	}
+	// Ensure at least one result slot
+	if len(results) == 0 {
+		results = []*Result{new(Result)}
+		archives = []*archive{newArchive(CallID(alias.ID), 0)}
 	}
 
 	*c = Call{
@@ -89,8 +100,8 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 		timestamp: time.UnixMicro(alias.Timestamp),
 		err:       callErr,
 
-		result:  new(Result),
-		archive: newArchive(CallID(alias.ID)),
+		results:  results,
+		archives: archives,
 
 		done: done,
 	}
@@ -98,15 +109,15 @@ func (c *Call) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func newCallFromExecutor(executor func(context.Context) (ResultStream, error), query string, onEvent func(CallState, *Call)) *Call {
+func newCallFromExecutor(executor func(context.Context) ([]ResultStream, error), query string, onEvent func(CallState, *Call)) *Call {
 	id := CallID(uuid.New().String())
 	c := &Call{
 		id:    id,
 		query: query,
 		state: CallStateUnknown,
 
-		result:  new(Result),
-		archive: newArchive(id),
+		results:  []*Result{new(Result)},
+		archives: []*archive{newArchive(id, 0)},
 
 		done: make(chan struct{}),
 	}
@@ -143,7 +154,7 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 
 		// execute the function
 		eventsCh <- CallStateExecuting
-		iter, err := executor(ctx)
+		iters, err := executor(ctx)
 		if err != nil {
 			c.timeTaken = time.Since(c.timestamp)
 			c.err = err
@@ -152,24 +163,39 @@ func newCallFromExecutor(executor func(context.Context) (ResultStream, error), q
 			return
 		}
 
-		// set iterator to result
-		err = c.result.SetIter(iter, func() { eventsCh <- CallStateRetrieving })
-		if err != nil {
-			c.timeTaken = time.Since(c.timestamp)
-			c.err = err
-			eventsCh <- CallStateRetrievingFailed
-			close(c.done)
-			return
+		// Initialize results and archives for all result sets
+		c.results = make([]*Result, len(iters))
+		c.archives = make([]*archive, len(iters))
+		for i := range iters {
+			c.results[i] = new(Result)
+			c.archives[i] = newArchive(id, i)
 		}
 
-		// archive the result
-		err = c.archive.setResult(c.result)
-		if err != nil {
-			c.timeTaken = time.Since(c.timestamp)
-			c.err = err
-			eventsCh <- CallStateArchiveFailed
-			close(c.done)
-			return
+		// Process each result set
+		for i, iter := range iters {
+			// set iterator to result (only fire retrieving event on first result)
+			var onFirstRow func()
+			if i == 0 {
+				onFirstRow = func() { eventsCh <- CallStateRetrieving }
+			}
+			err = c.results[i].SetIter(iter, onFirstRow)
+			if err != nil {
+				c.timeTaken = time.Since(c.timestamp)
+				c.err = err
+				eventsCh <- CallStateRetrievingFailed
+				close(c.done)
+				return
+			}
+
+			// archive the result
+			err = c.archives[i].setResult(c.results[i])
+			if err != nil {
+				c.timeTaken = time.Since(c.timestamp)
+				c.err = err
+				eventsCh <- CallStateArchiveFailed
+				close(c.done)
+				return
+			}
 		}
 
 		c.timeTaken = time.Since(c.timestamp)
@@ -219,17 +245,28 @@ func (c *Call) Cancel() {
 	}
 }
 
-func (c *Call) GetResult() (*Result, error) {
-	if c.result.IsEmpty() {
-		iter, err := c.archive.getResult()
+// GetResult returns the result at the given index.
+// If index is out of range, returns an error.
+func (c *Call) GetResult(index int) (*Result, error) {
+	if index < 0 || index >= len(c.results) {
+		return nil, fmt.Errorf("result index %d out of range (0-%d)", index, len(c.results)-1)
+	}
+
+	if c.results[index].IsEmpty() {
+		iter, err := c.archives[index].getResult()
 		if err != nil {
-			return nil, fmt.Errorf("c.archive.getResult: %w", err)
+			return nil, fmt.Errorf("c.archives[%d].getResult: %w", index, err)
 		}
-		err = c.result.SetIter(iter, nil)
+		err = c.results[index].SetIter(iter, nil)
 		if err != nil {
-			return nil, fmt.Errorf("c.result.setIter: %w", err)
+			return nil, fmt.Errorf("c.results[%d].setIter: %w", index, err)
 		}
 	}
 
-	return c.result, nil
+	return c.results[index], nil
+}
+
+// ResultCount returns the number of result sets in this call.
+func (c *Call) ResultCount() int {
+	return len(c.results)
 }

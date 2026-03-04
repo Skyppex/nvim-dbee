@@ -21,36 +21,59 @@ const archiveBasePath = "/tmp/dbee-history/"
 
 // these variables create a file name for a specified type
 var (
-	archiveDir = func(callID CallID) string {
+	archiveCallDir = func(callID CallID) string {
 		return filepath.Join(archiveBasePath, string(callID))
 	}
 
-	metaFile = func(callID CallID) string {
-		return filepath.Join(archiveDir(callID), "meta.gob")
+	archiveResultDir = func(callID CallID, resultIndex int) string {
+		return filepath.Join(archiveCallDir(callID), fmt.Sprintf("result_%d", resultIndex))
 	}
-	headerFile = func(callID CallID) string {
-		return filepath.Join(archiveDir(callID), "header.gob")
+
+	metaFile = func(callID CallID, resultIndex int) string {
+		return filepath.Join(archiveResultDir(callID, resultIndex), "meta.gob")
 	}
-	rowFile = func(callID CallID, i int) string {
-		return filepath.Join(archiveDir(callID), fmt.Sprintf("row_%d.gob", i))
+	headerFile = func(callID CallID, resultIndex int) string {
+		return filepath.Join(archiveResultDir(callID, resultIndex), "header.gob")
+	}
+	rowFile = func(callID CallID, resultIndex int, i int) string {
+		return filepath.Join(archiveResultDir(callID, resultIndex), fmt.Sprintf("row_%d.gob", i))
 	}
 )
 
 type archive struct {
-	id       CallID
-	isFilled bool
+	id          CallID
+	resultIndex int
+	isFilled    bool
 }
 
-func newArchive(id CallID) *archive {
+func newArchive(id CallID, resultIndex int) *archive {
 	isFilled := true
-	_, err := os.Stat(archiveDir(id))
+	_, err := os.Stat(archiveResultDir(id, resultIndex))
 	if os.IsNotExist(err) {
 		isFilled = false
 	}
 	return &archive{
-		id:       id,
-		isFilled: isFilled,
+		id:          id,
+		resultIndex: resultIndex,
+		isFilled:    isFilled,
 	}
+}
+
+// newArchives discovers all existing result archives for a call
+func newArchives(id CallID) []*archive {
+	var archives []*archive
+	for i := 0; ; i++ {
+		_, err := os.Stat(archiveResultDir(id, i))
+		if os.IsNotExist(err) {
+			break
+		}
+		archives = append(archives, &archive{
+			id:          id,
+			resultIndex: i,
+			isFilled:    true,
+		})
+	}
+	return archives
 }
 
 func (a *archive) isEmpty() bool {
@@ -64,20 +87,20 @@ func (a *archive) setResult(result *Result) error {
 	}
 
 	// create the directory for the history record
-	err := os.MkdirAll(archiveDir(a.id), os.ModePerm)
+	err := os.MkdirAll(archiveResultDir(a.id, a.resultIndex), os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("os.MkdirAll: %w", err)
 	}
 
 	// serialize the data
-	// files inside the directory ..../call_id/:
+	// files inside the directory ..../call_id/result_N/:
 	// header.gob - header
 	// meta.gob - meta
 	// row_0.gob - first row
 	// row_n.gob - n-th row
 
 	// header
-	file, err := os.Create(headerFile(a.id))
+	file, err := os.Create(headerFile(a.id, a.resultIndex))
 	if err != nil {
 		return fmt.Errorf("os.Create: %w", err)
 	}
@@ -90,7 +113,7 @@ func (a *archive) setResult(result *Result) error {
 	}
 
 	// meta
-	file, err = os.Create(metaFile(a.id))
+	file, err = os.Create(metaFile(a.id, a.resultIndex))
 	if err != nil {
 		return err
 	}
@@ -126,7 +149,7 @@ func (a *archive) setResult(result *Result) error {
 				return nil
 			}
 
-			file, err := os.Create(rowFile(a.id, i))
+			file, err := os.Create(rowFile(a.id, a.resultIndex, i))
 			if err != nil {
 				return fmt.Errorf("os.Create: %w", err)
 			}
@@ -155,20 +178,22 @@ func (a *archive) getResult() (*archiveRows, error) {
 	if !a.isFilled {
 		return nil, errors.New("archive does not contain a result")
 	}
-	return newArchiveRows(a.id)
+	return newArchiveRows(a.id, a.resultIndex)
 }
 
 type archiveRows struct {
-	id      CallID
-	header  Header
-	meta    *Meta
-	iter    func() (Row, error)
-	hasNext func() bool
+	id          CallID
+	resultIndex int
+	header      Header
+	meta        *Meta
+	iter        func() (Row, error)
+	hasNext     func() bool
 }
 
-func newArchiveRows(id CallID) (*archiveRows, error) {
+func newArchiveRows(id CallID, resultIndex int) (*archiveRows, error) {
 	r := &archiveRows{
-		id: id,
+		id:          id,
+		resultIndex: resultIndex,
 	}
 
 	err := r.readHeader()
@@ -188,7 +213,7 @@ func newArchiveRows(id CallID) (*archiveRows, error) {
 func (r *archiveRows) readHeader() error {
 	// header
 	var header Header
-	file, err := os.Open(headerFile(r.id))
+	file, err := os.Open(headerFile(r.id, r.resultIndex))
 	if err != nil {
 		return fmt.Errorf("os.Open: %w", err)
 	}
@@ -208,7 +233,7 @@ func (r *archiveRows) readHeader() error {
 func (r *archiveRows) readMeta() error {
 	// meta
 	var meta Meta
-	file, err := os.Open(metaFile(r.id))
+	file, err := os.Open(metaFile(r.id, r.resultIndex))
 	if err != nil {
 		return fmt.Errorf("os.Open: %w", err)
 	}
@@ -241,13 +266,13 @@ func (r *archiveRows) readIter() {
 	// open the first file if it exists,
 	// loop through its contents and try the next file
 	fileExists := func(rowIndex int) bool {
-		_, err := os.Stat(rowFile(r.id, rowIndex))
+		_, err := os.Stat(rowFile(r.id, r.resultIndex, rowIndex))
 		return err == nil
 	}
 
 	// openFile returns rows of the file
 	openFile := func(i int) ([]Row, error) {
-		file, err := os.Open(rowFile(r.id, i))
+		file, err := os.Open(rowFile(r.id, r.resultIndex, i))
 		if err != nil {
 			return nil, fmt.Errorf("os.Open: %w", err)
 		}

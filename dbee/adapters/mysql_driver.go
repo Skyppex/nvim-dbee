@@ -7,7 +7,10 @@ import (
 	"github.com/kndndrj/nvim-dbee/dbee/core/builders"
 )
 
-var _ core.Driver = (*mySQLDriver)(nil)
+var (
+	_ core.Driver               = (*mySQLDriver)(nil)
+	_ core.MultipleResultDriver = (*mySQLDriver)(nil)
+)
 
 type mySQLDriver struct {
 	c *builders.Client
@@ -16,6 +19,30 @@ type mySQLDriver struct {
 func (c *mySQLDriver) Query(ctx context.Context, query string) (core.ResultStream, error) {
 	// run query, fallback to affected rows
 	return c.c.QueryUntilNotEmpty(ctx, query, "select ROW_COUNT() as 'Rows Affected'")
+}
+
+func (c *mySQLDriver) QueryMultiple(ctx context.Context, query string) ([]core.ResultStream, error) {
+	// Get all result sets from the query
+	results, err := c.c.QueryMultiple(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no results, fall back to row count
+	if len(results) == 0 || (len(results) == 1 && len(results[0].Header()) == 0) {
+		fallback, err := c.c.Query(ctx, "select ROW_COUNT() as 'Rows Affected'")
+		if err != nil {
+			return nil, err
+		}
+		return []core.ResultStream{fallback}, nil
+	}
+
+	// Convert to []core.ResultStream
+	streams := make([]core.ResultStream, len(results))
+	for i, r := range results {
+		streams[i] = r
+	}
+	return streams, nil
 }
 
 func (c *mySQLDriver) Columns(opts *core.TableOptions) ([]*core.Column, error) {

@@ -328,13 +328,22 @@ end
 ---@param bufnr integer
 ---@param from integer
 ---@param to integer
----@return integer # total number of rows
-function Handler:call_display_result(id, bufnr, from, to)
-  local length = vim.fn.DbeeCallDisplayResult(id, { buffer = bufnr, from = from, to = to })
-  if not length or length == vim.NIL then
-    return 0
+---@param result_index? integer which result set to display (0-based, defaults to 0)
+---@return integer # total number of rows in this result set
+---@return integer # total number of result sets
+function Handler:call_display_result(id, bufnr, from, to, result_index)
+  result_index = result_index or 0
+  local ret = vim.fn.DbeeCallDisplayResult(id, {
+    buffer = bufnr,
+    from = from,
+    to = to,
+    result_index = result_index,
+  })
+  if not ret or ret == vim.NIL then
+    return 0, 1
   end
-  return length
+  -- ret is [length, result_count]
+  return ret[1], ret[2]
 end
 
 ---@alias store_format "csv"|"json"|"table"
@@ -343,16 +352,18 @@ end
 ---@param id call_id
 ---@param format store_format format of the output
 ---@param output store_output where to pipe the results
----@param opts { from: integer, to: integer, extra_arg: any }
+---@param opts { from: integer, to: integer, result_index: integer, extra_arg: any }
 function Handler:call_store_result(id, format, output, opts)
   opts = opts or {}
 
   local from = opts.from or 0
   local to = opts.to or -1
+  local result_index = opts.result_index or 0
 
   vim.fn.DbeeCallStoreResult(id, format, output, {
     from = from,
     to = to,
+    result_index = result_index,
     extra_arg = opts.extra_arg,
   })
 end

@@ -36,6 +36,12 @@ type (
 		Close()
 	}
 
+	// MultipleResultDriver is an optional interface for drivers that support
+	// returning multiple result sets from a single query (e.g., SQL Server stored procedures).
+	MultipleResultDriver interface {
+		QueryMultiple(ctx context.Context, query string) ([]ResultStream, error)
+	}
+
 	// DatabaseSwitcher is an optional interface for drivers that have database switching capabilities.
 	DatabaseSwitcher interface {
 		SelectDatabase(string) error
@@ -102,11 +108,22 @@ func (c *Connection) GetParams() *ConnectionParams {
 }
 
 func (c *Connection) Execute(query string, onEvent func(CallState, *Call)) *Call {
-	exec := func(ctx context.Context) (ResultStream, error) {
+	exec := func(ctx context.Context) ([]ResultStream, error) {
 		if strings.TrimSpace(query) == "" {
 			return nil, errors.New("empty query")
 		}
-		return c.driver.Query(ctx, query)
+
+		// Check if the driver supports multiple result sets
+		if multiDriver, ok := c.driver.(MultipleResultDriver); ok {
+			return multiDriver.QueryMultiple(ctx, query)
+		}
+
+		// Fall back to single result set
+		result, err := c.driver.Query(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		return []ResultStream{result}, nil
 	}
 
 	return newCallFromExecutor(exec, query, onEvent)

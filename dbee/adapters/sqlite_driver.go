@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	_ core.Driver           = (*sqliteDriver)(nil)
-	_ core.DatabaseSwitcher = (*sqliteDriver)(nil)
+	_ core.Driver               = (*sqliteDriver)(nil)
+	_ core.DatabaseSwitcher     = (*sqliteDriver)(nil)
+	_ core.MultipleResultDriver = (*sqliteDriver)(nil)
 )
 
 type sqliteDriver struct {
@@ -20,6 +21,30 @@ type sqliteDriver struct {
 func (d *sqliteDriver) Query(ctx context.Context, query string) (core.ResultStream, error) {
 	// run query, fallback to affected rows
 	return d.c.QueryUntilNotEmpty(ctx, query, "select changes() as 'Rows Affected'")
+}
+
+func (d *sqliteDriver) QueryMultiple(ctx context.Context, query string) ([]core.ResultStream, error) {
+	// Get all result sets from the query
+	results, err := d.c.QueryMultiple(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no results, fall back to row count
+	if len(results) == 0 || (len(results) == 1 && len(results[0].Header()) == 0) {
+		fallback, err := d.c.Query(ctx, "select changes() as 'Rows Affected'")
+		if err != nil {
+			return nil, err
+		}
+		return []core.ResultStream{fallback}, nil
+	}
+
+	// Convert to []core.ResultStream
+	streams := make([]core.ResultStream, len(results))
+	for i, r := range results {
+		streams[i] = r
+	}
+	return streams, nil
 }
 
 func (d *sqliteDriver) Columns(opts *core.TableOptions) ([]*core.Column, error) {

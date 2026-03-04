@@ -239,13 +239,19 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 		func(args *struct {
 			ID   core.CallID `msgpack:",array"`
 			Opts *struct {
-				Buffer int `msgpack:"buffer"`
-				From   int `msgpack:"from"`
-				To     int `msgpack:"to"`
+				Buffer      int `msgpack:"buffer"`
+				From        int `msgpack:"from"`
+				To          int `msgpack:"to"`
+				ResultIndex int `msgpack:"result_index"`
 			}
 		},
 		) (any, error) {
-			return h.CallDisplayResult(args.ID, nvim.Buffer(args.Opts.Buffer), args.Opts.From, args.Opts.To)
+			length, resultCount, err := h.CallDisplayResult(args.ID, nvim.Buffer(args.Opts.Buffer), args.Opts.From, args.Opts.To, args.Opts.ResultIndex)
+			if err != nil {
+				return nil, err
+			}
+			// Return both the row count and result count
+			return []int{length, resultCount}, nil
 		})
 
 	p.RegisterEndpoint(
@@ -255,12 +261,13 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			Format string
 			Output string
 			Opts   *struct {
-				From     int `msgpack:"from"`
-				To       int `msgpack:"to"`
-				ExtraArg any `msgpack:"extra_arg"`
+				From        int `msgpack:"from"`
+				To          int `msgpack:"to"`
+				ResultIndex int `msgpack:"result_index"`
+				ExtraArg    any `msgpack:"extra_arg"`
 			}
 		},
 		) (any, error) {
-			return nil, h.CallStoreResult(args.ID, args.Format, args.Output, args.Opts.From, args.Opts.To, args.Opts.ExtraArg)
+			return nil, h.CallStoreResult(args.ID, args.Format, args.Output, args.Opts.From, args.Opts.To, args.Opts.ResultIndex, args.Opts.ExtraArg)
 		})
 }

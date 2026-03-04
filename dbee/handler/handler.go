@@ -381,31 +381,33 @@ func (h *Handler) CallCancel(callID core.CallID) error {
 	return nil
 }
 
-func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from, to int) (int, error) {
+// CallDisplayResult displays the result at the given index in the buffer.
+// Returns the total number of rows in the result and the total number of result sets.
+func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from, to, resultIndex int) (int, int, error) {
 	call, ok := h.lookupCall[callID]
 	if !ok {
-		return 0, fmt.Errorf("unknown call with id: %q", callID)
+		return 0, 0, fmt.Errorf("unknown call with id: %q", callID)
 	}
 
-	res, err := call.GetResult()
+	res, err := call.GetResult(resultIndex)
 	if err != nil {
-		return 0, fmt.Errorf("call.GetResult: %w", err)
+		return 0, 0, fmt.Errorf("call.GetResult: %w", err)
 	}
 
 	text, err := res.Format(newTable(), from, to)
 	if err != nil {
-		return 0, fmt.Errorf("res.Format: %w", err)
+		return 0, 0, fmt.Errorf("res.Format: %w", err)
 	}
 
 	_, err = newBuffer(h.vim, buffer).Write(text)
 	if err != nil {
-		return 0, fmt.Errorf("buffer.Write: %w", err)
+		return 0, 0, fmt.Errorf("buffer.Write: %w", err)
 	}
 
-	return res.Len(), nil
+	return res.Len(), call.ResultCount(), nil
 }
 
-func (h *Handler) CallStoreResult(callID core.CallID, fmat, out string, from, to int, arg ...any) error {
+func (h *Handler) CallStoreResult(callID core.CallID, fmat, out string, from, to, resultIndex int, arg ...any) error {
 	stat, ok := h.lookupCall[callID]
 	if !ok {
 		return fmt.Errorf("unknown call with id: %q", callID)
@@ -429,7 +431,7 @@ func (h *Handler) CallStoreResult(callID core.CallID, fmat, out string, from, to
 	}
 	defer cleanup()
 
-	res, err := stat.GetResult()
+	res, err := stat.GetResult(resultIndex)
 	if err != nil {
 		return fmt.Errorf("stat.GetResult: %w", err)
 	}

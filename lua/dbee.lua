@@ -87,6 +87,9 @@ function dbee.store(format, output, opts)
     error("no current call to store")
   end
 
+  opts = opts or {}
+  opts.result_index = api.ui.result_get_result_set_index()
+
   api.core.call_store_result(call.id, format, output, opts)
 end
 

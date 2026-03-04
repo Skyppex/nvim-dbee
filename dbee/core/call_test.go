@@ -36,7 +36,7 @@ func TestCall_Success(t *testing.T) {
 		eventIndex++
 
 		if state == core.CallStateRetrieving {
-			result, err := c.GetResult()
+			result, err := c.GetResult(0)
 			r.NoError(err)
 
 			actualRows, err := result.Rows(0, len(rows))
@@ -172,7 +172,7 @@ func TestCall_Archive(t *testing.T) {
 	}
 
 	// check result
-	result, err := call.GetResult()
+	result, err := call.GetResult(0)
 	r.NoError(err)
 	actualRows, err := result.Rows(0, len(rows))
 	r.NoError(err)
@@ -188,7 +188,7 @@ func TestCall_Archive(t *testing.T) {
 	r.NoError(err)
 
 	// check result again
-	result, err = restoredCall.GetResult()
+	result, err = restoredCall.GetResult(0)
 	r.NoError(err)
 	actualRows, err = result.Rows(0, len(rows))
 	r.NoError(err)

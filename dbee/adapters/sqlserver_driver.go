@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	_ core.Driver           = (*sqlServerDriver)(nil)
-	_ core.DatabaseSwitcher = (*sqlServerDriver)(nil)
+	_ core.Driver               = (*sqlServerDriver)(nil)
+	_ core.DatabaseSwitcher     = (*sqlServerDriver)(nil)
+	_ core.MultipleResultDriver = (*sqlServerDriver)(nil)
 )
 
 type sqlServerDriver struct {
@@ -25,6 +26,30 @@ type sqlServerDriver struct {
 func (c *sqlServerDriver) Query(ctx context.Context, query string) (core.ResultStream, error) {
 	// run query, fallback to affected rows
 	return c.c.QueryUntilNotEmpty(ctx, query, "select @@ROWCOUNT as 'Rows Affected'")
+}
+
+func (c *sqlServerDriver) QueryMultiple(ctx context.Context, query string) ([]core.ResultStream, error) {
+	// Get all result sets from the query
+	results, err := c.c.QueryMultiple(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no results, fall back to row count
+	if len(results) == 0 || (len(results) == 1 && len(results[0].Header()) == 0) {
+		fallback, err := c.c.Query(ctx, "select @@ROWCOUNT as 'Rows Affected'")
+		if err != nil {
+			return nil, err
+		}
+		return []core.ResultStream{fallback}, nil
+	}
+
+	// Convert to []core.ResultStream
+	streams := make([]core.ResultStream, len(results))
+	for i, r := range results {
+		streams[i] = r
+	}
+	return streams, nil
 }
 
 func (c *sqlServerDriver) Columns(opts *core.TableOptions) ([]*core.Column, error) {

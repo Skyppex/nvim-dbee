@@ -210,6 +210,30 @@ function ui.result_page_first()
   state.result():page_first()
 end
 
+--- Go to next result set (for queries returning multiple result sets).
+--- Does not wrap around; notifies if already at the last result set.
+function ui.next_result_set()
+  state.result():next_result_set()
+end
+
+--- Go to previous result set (for queries returning multiple result sets).
+--- Does not wrap around; notifies if already at the first result set.
+function ui.prev_result_set()
+  state.result():prev_result_set()
+end
+
+--- Get the current result set index (0-based).
+---@return integer
+function ui.result_get_result_set_index()
+  return state.result():get_result_set_index()
+end
+
+--- Get the total number of result sets.
+---@return integer
+function ui.result_get_result_set_count()
+  return state.result():get_result_set_count()
+end
+
 --- Open the result UI.
 ---@param winid integer
 function ui.result_show(winid)

@@ -55,6 +55,7 @@
 ---@field query string
 ---@field state call_state
 ---@field timestamp_us integer time in microseconds
+---@field result_count integer number of result sets returned by this call
 ---@field error? string error message in case of error
 
 ---@divider -

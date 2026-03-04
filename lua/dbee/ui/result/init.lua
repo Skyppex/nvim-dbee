@@ -13,6 +13,8 @@ local common = require("dbee.ui.common")
 ---@field private mappings key_mapping[]
 ---@field private page_index integer index of the current page
 ---@field private page_ammount integer number of pages in the current result set
+---@field private result_set_index integer index of the current result set (0-based)
+---@field private result_set_count integer total number of result sets
 ---@field private stop_progress fun() function that stops progress display
 ---@field private progress_opts progress_config
 ---@field private window_options table<string, any> a table of window options.
@@ -35,6 +37,8 @@ function ResultUI:new(handler, opts)
     page_size = opts.page_size or 100,
     page_index = 0,
     page_ammount = 0,
+    result_set_index = 0,
+    result_set_count = 1,
     focus_result = opts.focus_result,
     mappings = opts.mappings or {},
     stop_progress = function() end,
@@ -195,8 +199,12 @@ function ResultUI:display_result(page)
   local from = self.page_size * page
   local to = self.page_size * (page + 1)
 
-  -- call go function
-  local length = self.handler:call_display_result(self.current_call.id, self.bufnr, from, to)
+  -- call go function with result_set_index
+  local length, result_count =
+    self.handler:call_display_result(self.current_call.id, self.bufnr, from, to, self.result_set_index)
+
+  -- update result set count
+  self.result_set_count = result_count
 
   -- adjust page ammount
   self.page_ammount = math.floor(length / self.page_size)
@@ -209,11 +217,23 @@ function ResultUI:display_result(page)
 
   -- set winbar status
   if self:has_window() then
-    vim.api.nvim_win_set_option(
-      self.winid,
-      "winbar",
-      string.format("%d/%d (%d)%%=Took %.3fs", page + 1, self.page_ammount + 1, length, seconds)
-    )
+    local winbar
+    if self.result_set_count > 1 then
+      -- Multiple result sets: show "Result X/Y | Page A/B (rows) Took Xs"
+      winbar = string.format(
+        "Result %d/%d | Page %d/%d (%d)%%=Took %.3fs",
+        self.result_set_index + 1,
+        self.result_set_count,
+        page + 1,
+        self.page_ammount + 1,
+        length,
+        seconds
+      )
+    else
+      -- Single result set: keep original format
+      winbar = string.format("%d/%d (%d)%%=Took %.3fs", page + 1, self.page_ammount + 1, length, seconds)
+    end
+    vim.api.nvim_win_set_option(self.winid, "winbar", winbar)
   end
   -- set focus if window exists
   self:focus_result_window()
@@ -239,6 +259,14 @@ function ResultUI:get_actions()
     end,
     page_first = function()
       self:page_first()
+    end,
+
+    -- result set navigation
+    result_set_next = function()
+      self:next_result_set()
+    end,
+    result_set_prev = function()
+      self:prev_result_set()
     end,
 
     -- yank functions
@@ -284,6 +312,8 @@ end
 function ResultUI:set_call(call)
   self.page_index = 0
   self.page_ammount = 0
+  self.result_set_index = 0
+  self.result_set_count = call.result_count or 1
   self.current_call = call
 
   self.stop_progress()
@@ -315,6 +345,40 @@ function ResultUI:page_first()
   self.page_index = self:display_result(0)
 end
 
+-- Navigate to the next result set
+function ResultUI:next_result_set()
+  if self.result_set_index >= self.result_set_count - 1 then
+    return
+  end
+  self.result_set_index = self.result_set_index + 1
+  self.page_index = 0
+  self.page_ammount = 0
+  self:page_current()
+end
+
+-- Navigate to the previous result set
+function ResultUI:prev_result_set()
+  if self.result_set_index <= 0 then
+    return
+  end
+  self.result_set_index = self.result_set_index - 1
+  self.page_index = 0
+  self.page_ammount = 0
+  self:page_current()
+end
+
+-- Get the current result set index (0-based)
+---@return integer
+function ResultUI:get_result_set_index()
+  return self.result_set_index
+end
+
+-- Get the total number of result sets
+---@return integer
+function ResultUI:get_result_set_count()
+  return self.result_set_count
+end
+
 -- wrapper for storing the current row
 ---@private
 ---@param format string
@@ -337,7 +401,7 @@ function ResultUI:store_current_wrapper(format, register)
     self.current_call.id,
     format,
     "yank",
-    { from = index, to = index + 1, extra_arg = register }
+    { from = index, to = index + 1, result_index = self.result_set_index, extra_arg = register }
   )
 end
 
@@ -361,7 +425,7 @@ function ResultUI:store_selection_wrapper(format, register)
     self.current_call.id,
     format,
     "yank",
-    { from = sindex, to = eindex, extra_arg = register }
+    { from = sindex, to = eindex, result_index = self.result_set_index, extra_arg = register }
   )
 end
 
@@ -373,7 +437,12 @@ function ResultUI:store_all_wrapper(format, register)
   if not self.current_call then
     error("no call set to result")
   end
-  self.handler:call_store_result(self.current_call.id, format, "yank", { extra_arg = register })
+  self.handler:call_store_result(
+    self.current_call.id,
+    format,
+    "yank",
+    { result_index = self.result_set_index, extra_arg = register }
+  )
 end
 
 ---@private
