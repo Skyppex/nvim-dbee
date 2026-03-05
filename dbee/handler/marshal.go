@@ -86,15 +86,17 @@ func (cw *connectionWrap) MarshalMsgPack(enc *msgpack.Encoder) error {
 		return enc.Encode(nil)
 	}
 	return enc.Encode(&struct {
-		ID   string `msgpack:"id"`
-		Name string `msgpack:"name"`
-		Type string `msgpack:"type"`
-		URL  string `msgpack:"url"`
+		ID            string `msgpack:"id"`
+		Name          string `msgpack:"name"`
+		Type          string `msgpack:"type"`
+		URL           string `msgpack:"url"`
+		InTransaction bool   `msgpack:"in_transaction"`
 	}{
-		ID:   string(cw.connection.GetID()),
-		Name: cw.connection.GetName(),
-		Type: cw.connection.GetType(),
-		URL:  cw.connection.GetURL(),
+		ID:            string(cw.connection.GetID()),
+		Name:          cw.connection.GetName(),
+		Type:          cw.connection.GetType(),
+		URL:           cw.connection.GetURL(),
+		InTransaction: cw.connection.HasActiveTransaction(),
 	})
 }
 

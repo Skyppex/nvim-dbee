@@ -94,3 +94,14 @@ func (eb *eventBus) DatabaseSelectFailed(id core.ConnectionID, err error) {
 
 	eb.callLua("database_select_failed", data)
 }
+
+// TransactionStateChanged is called when the transaction state of a connection changes.
+// state can be "active" or "none".
+func (eb *eventBus) TransactionStateChanged(id core.ConnectionID, state string) {
+	data := fmt.Sprintf(`{
+		conn_id = %q,
+		state = %q,
+	}`, id, state)
+
+	eb.callLua("transaction_state_changed", data)
+}

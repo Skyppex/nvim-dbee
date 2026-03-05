@@ -270,4 +270,42 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 		) (any, error) {
 			return nil, h.CallStoreResult(args.ID, args.Format, args.Output, args.Opts.From, args.Opts.To, args.Opts.ResultIndex, args.Opts.ExtraArg)
 		})
+
+	// Transaction endpoints
+
+	p.RegisterEndpoint(
+		"DbeeConnectionBeginTransaction",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		},
+		) (any, error) {
+			return nil, h.ConnectionBeginTransaction(args.ID)
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionCommitTransaction",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		},
+		) (any, error) {
+			return nil, h.ConnectionCommitTransaction(args.ID)
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionRollbackTransaction",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		},
+		) (any, error) {
+			return nil, h.ConnectionRollbackTransaction(args.ID)
+		})
+
+	p.RegisterEndpoint(
+		"DbeeConnectionHasTransaction",
+		func(args *struct {
+			ID core.ConnectionID `msgpack:",array"`
+		},
+		) (bool, error) {
+			return h.ConnectionHasTransaction(args.ID), nil
+		})
 }

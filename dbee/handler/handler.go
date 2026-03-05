@@ -173,12 +173,27 @@ func (h *Handler) ConnectionExecute(connID core.ConnectionID, query string) (*co
 		return nil, fmt.Errorf("unknown connection with id: %q", connID)
 	}
 
-	call := c.Execute(query, func(state core.CallState, c *core.Call) {
-		if err := c.Err(); err != nil {
+	// Track transaction state before execution
+	txStateBefore := c.HasActiveTransaction()
+
+	call := c.Execute(query, func(state core.CallState, call *core.Call) {
+		if err := call.Err(); err != nil {
 			h.log.Errorf("cl.Err: %s", err)
 		}
 
-		h.events.CallStateChanged(c)
+		h.events.CallStateChanged(call)
+
+		// Check if transaction state changed after query completed
+		if state == core.CallStateArchived || state == core.CallStateCanceled {
+			txStateAfter := c.HasActiveTransaction()
+			if txStateBefore != txStateAfter {
+				if txStateAfter {
+					h.events.TransactionStateChanged(connID, "active")
+				} else {
+					h.events.TransactionStateChanged(connID, "none")
+				}
+			}
+		}
 	})
 
 	id := call.GetID()
@@ -491,4 +506,62 @@ func (h *Handler) getStoreWriter(output string, arg ...any) (writer io.Writer, c
 	}
 
 	return nil, func() {}, fmt.Errorf("store output: %q is not supported", output)
+}
+
+// ConnectionBeginTransaction starts a new transaction on the connection.
+func (h *Handler) ConnectionBeginTransaction(connID core.ConnectionID) error {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return fmt.Errorf("unknown connection with id: %q", connID)
+	}
+
+	err := c.BeginTransaction()
+	if err != nil {
+		return fmt.Errorf("c.BeginTransaction: %w", err)
+	}
+
+	h.events.TransactionStateChanged(connID, "active")
+	return nil
+}
+
+// ConnectionCommitTransaction commits the current transaction.
+func (h *Handler) ConnectionCommitTransaction(connID core.ConnectionID) error {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return fmt.Errorf("unknown connection with id: %q", connID)
+	}
+
+	err := c.CommitTransaction()
+	if err != nil {
+		return fmt.Errorf("c.CommitTransaction: %w", err)
+	}
+
+	h.events.TransactionStateChanged(connID, "none")
+	return nil
+}
+
+// ConnectionRollbackTransaction rolls back the current transaction.
+func (h *Handler) ConnectionRollbackTransaction(connID core.ConnectionID) error {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return fmt.Errorf("unknown connection with id: %q", connID)
+	}
+
+	err := c.RollbackTransaction()
+	if err != nil {
+		return fmt.Errorf("c.RollbackTransaction: %w", err)
+	}
+
+	h.events.TransactionStateChanged(connID, "none")
+	return nil
+}
+
+// ConnectionHasTransaction returns true if the connection has an active transaction.
+func (h *Handler) ConnectionHasTransaction(connID core.ConnectionID) bool {
+	c, ok := h.lookupConnection[connID]
+	if !ok {
+		return false
+	}
+
+	return c.HasActiveTransaction()
 }
