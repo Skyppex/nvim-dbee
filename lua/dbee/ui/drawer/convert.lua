@@ -244,10 +244,16 @@ local function handler_real_nodes(handler, result)
         end
       end
 
+      -- Add transaction indicator to connection name if active
+      local display_name = conn.name
+      if conn.in_transaction then
+        display_name = conn.name .. " [TXN]"
+      end
+
       local node = NuiTree.Node {
         id = conn.id,
-        name = conn.name,
-        type = "connection",
+        name = display_name,
+        type = conn.in_transaction and "connection_transaction" or "connection",
         -- set connection as active manually
         action_1 = function(_)
           -- set_current_connection fires "current_connection_changed" event

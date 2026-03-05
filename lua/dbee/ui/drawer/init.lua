@@ -117,6 +117,10 @@ function DrawerUI:new(handler, editor, result, opts)
     vim.notify("Failed to switch database: " .. tostring(data.error), vim.log.levels.ERROR)
   end)
 
+  handler:register_event_listener("transaction_state_changed", function(_)
+    o:refresh()
+  end)
+
   editor:register_event_listener("current_note_changed", function(data)
     o:on_current_note_changed(data)
   end)

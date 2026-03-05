@@ -118,6 +118,11 @@ config.default = {
         icon_highlight = "SpecialChar",
         text_highlight = "",
       },
+      connection_transaction = {
+        icon = "󱘖",
+        icon_highlight = "WarningMsg",
+        text_highlight = "WarningMsg",
+      },
       database_switch = {
         icon = "",
         icon_highlight = "Character",
