@@ -171,23 +171,27 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			return nil, h.ConnectionSelectDatabase(args.ID, args.Database)
 		})
 
-	// Async endpoints: these return nothing, so isSync=false.
+	// Async endpoints: these start goroutines and return immediately.
 	// Results are delivered via events.
+	// Note: We return an error type to make these sync calls that return quickly,
+	// because true async (notify) calls were not being received reliably.
 
 	p.RegisterEndpoint(
 		"DbeeConnectionGetStructureAsync",
 		func(args *struct {
 			ID core.ConnectionID `msgpack:",array"`
-		}) {
+		}) error {
 			h.ConnectionGetStructureAsync(args.ID)
+			return nil
 		})
 
 	p.RegisterEndpoint(
 		"DbeeConnectionListDatabasesAsync",
 		func(args *struct {
 			ID core.ConnectionID `msgpack:",array"`
-		}) {
+		}) error {
 			h.ConnectionListDatabasesAsync(args.ID)
+			return nil
 		})
 
 	p.RegisterEndpoint(
@@ -195,8 +199,9 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 		func(args *struct {
 			ID       core.ConnectionID `msgpack:",array"`
 			Database string
-		}) {
+		}) error {
 			h.ConnectionSelectDatabaseAsync(args.ID, args.Database)
+			return nil
 		})
 
 	// Cached endpoints: return cached data from async operations.
