@@ -11,6 +11,9 @@ import (
 )
 
 var ErrDatabaseSwitchingNotSupported = errors.New("database switching not supported")
+var ErrTransactionsNotSupported = errors.New("transactions not supported for this adapter")
+var ErrTransactionAlreadyActive = errors.New("transaction already active")
+var ErrNoActiveTransaction = errors.New("no active transaction")
 
 // TableOptions contain options for gathering information about specific table.
 type TableOptions struct {
@@ -46,6 +49,14 @@ type (
 	DatabaseSwitcher interface {
 		SelectDatabase(string) error
 		ListDatabases() (current string, available []string, err error)
+	}
+
+	// TransactionManager is an optional interface for drivers that support transactions.
+	TransactionManager interface {
+		BeginTransaction() error
+		CommitTransaction() error
+		RollbackTransaction() error
+		HasActiveTransaction() bool
 	}
 )
 
@@ -131,7 +142,13 @@ func (c *Connection) Execute(query string, onEvent func(CallState, *Call)) *Call
 
 // SelectDatabase tries to switch to a given database with the used client.
 // on error, the switch doesn't happen and the previous connection remains active.
+// Returns an error if there's an active transaction.
 func (c *Connection) SelectDatabase(name string) error {
+	// Check for active transaction before allowing database switch
+	if c.HasActiveTransaction() {
+		return errors.New("cannot switch database while transaction is active - commit or rollback first")
+	}
+
 	switcher, ok := c.driver.(DatabaseSwitcher)
 	if !ok {
 		return ErrDatabaseSwitchingNotSupported
@@ -209,4 +226,40 @@ func (c *Connection) GetHelpers(opts *TableOptions) map[string]string {
 
 func (c *Connection) Close() {
 	c.driver.Close()
+}
+
+// BeginTransaction starts a new transaction on the connection.
+func (c *Connection) BeginTransaction() error {
+	tm, ok := c.driver.(TransactionManager)
+	if !ok {
+		return ErrTransactionsNotSupported
+	}
+	return tm.BeginTransaction()
+}
+
+// CommitTransaction commits the current transaction.
+func (c *Connection) CommitTransaction() error {
+	tm, ok := c.driver.(TransactionManager)
+	if !ok {
+		return ErrTransactionsNotSupported
+	}
+	return tm.CommitTransaction()
+}
+
+// RollbackTransaction rolls back the current transaction.
+func (c *Connection) RollbackTransaction() error {
+	tm, ok := c.driver.(TransactionManager)
+	if !ok {
+		return ErrTransactionsNotSupported
+	}
+	return tm.RollbackTransaction()
+}
+
+// HasActiveTransaction returns true if there's an active transaction.
+func (c *Connection) HasActiveTransaction() bool {
+	tm, ok := c.driver.(TransactionManager)
+	if !ok {
+		return false
+	}
+	return tm.HasActiveTransaction()
 }

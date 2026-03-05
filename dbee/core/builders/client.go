@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/kndndrj/nvim-dbee/dbee/core"
 )
@@ -14,6 +15,10 @@ import (
 type Client struct {
 	db             *sql.DB
 	typeProcessors map[string]func(any) any
+
+	// Transaction support
+	tx   *sql.Tx
+	txMu sync.Mutex
 }
 
 func NewClient(db *sql.DB, opts ...ClientOption) *Client {
@@ -31,7 +36,76 @@ func NewClient(db *sql.DB, opts ...ClientOption) *Client {
 }
 
 func (c *Client) Close() {
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+
+	// Rollback any active transaction before closing
+	if c.tx != nil {
+		_ = c.tx.Rollback()
+		c.tx = nil
+	}
 	c.db.Close()
+}
+
+// BeginTransaction starts a new database transaction.
+func (c *Client) BeginTransaction() error {
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+
+	if c.tx != nil {
+		return core.ErrTransactionAlreadyActive
+	}
+
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	c.tx = tx
+	return nil
+}
+
+// CommitTransaction commits the current transaction.
+func (c *Client) CommitTransaction() error {
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+
+	if c.tx == nil {
+		return core.ErrNoActiveTransaction
+	}
+
+	err := c.tx.Commit()
+	c.tx = nil
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// RollbackTransaction rolls back the current transaction.
+func (c *Client) RollbackTransaction() error {
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+
+	if c.tx == nil {
+		return core.ErrNoActiveTransaction
+	}
+
+	err := c.tx.Rollback()
+	c.tx = nil
+	if err != nil {
+		return fmt.Errorf("failed to rollback transaction: %w", err)
+	}
+
+	return nil
+}
+
+// HasActiveTransaction returns true if there's an active transaction.
+func (c *Client) HasActiveTransaction() bool {
+	c.txMu.Lock()
+	defer c.txMu.Unlock()
+	return c.tx != nil
 }
 
 // Swap swaps current database connection for another one
@@ -60,7 +134,18 @@ func (c *Client) ColumnsFromQuery(query string, args ...any) ([]*core.Column, er
 
 // Exec executes a query and returns a stream with single row (number of affected results).
 func (c *Client) Exec(ctx context.Context, query string) (*ResultStream, error) {
-	res, err := c.db.ExecContext(ctx, query)
+	var res sql.Result
+	var err error
+
+	c.txMu.Lock()
+	tx := c.tx
+	c.txMu.Unlock()
+
+	if tx != nil {
+		res, err = tx.ExecContext(ctx, query)
+	} else {
+		res, err = c.db.ExecContext(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +165,18 @@ func (c *Client) Exec(ctx context.Context, query string) (*ResultStream, error) 
 
 // Query executes a query on a connection and returns a result stream.
 func (c *Client) Query(ctx context.Context, query string) (*ResultStream, error) {
-	rows, err := c.db.QueryContext(ctx, query)
+	var rows *sql.Rows
+	var err error
+
+	c.txMu.Lock()
+	tx := c.tx
+	c.txMu.Unlock()
+
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, query)
+	} else {
+		rows, err = c.db.QueryContext(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +187,18 @@ func (c *Client) Query(ctx context.Context, query string) (*ResultStream, error)
 // QueryMultiple executes a query and returns all result sets.
 // This properly handles queries that return multiple result sets (e.g., SQL Server stored procedures).
 func (c *Client) QueryMultiple(ctx context.Context, query string) ([]*ResultStream, error) {
-	rows, err := c.db.QueryContext(ctx, query)
+	var rows *sql.Rows
+	var err error
+
+	c.txMu.Lock()
+	tx := c.tx
+	c.txMu.Unlock()
+
+	if tx != nil {
+		rows, err = tx.QueryContext(ctx, query)
+	} else {
+		rows, err = c.db.QueryContext(ctx, query)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +214,39 @@ func (c *Client) QueryUntilNotEmpty(ctx context.Context, queries ...string) (*Re
 		return nil, errors.New("no queries provided")
 	}
 
+	c.txMu.Lock()
+	tx := c.tx
+	c.txMu.Unlock()
+
+	// If we have an active transaction, use it directly
+	if tx != nil {
+		for _, query := range queries {
+			rows, err := tx.QueryContext(ctx, query)
+			if err != nil {
+				return nil, fmt.Errorf("tx.QueryContext: %w", err)
+			}
+
+			result, err := c.parseRows(rows)
+			if err != nil {
+				return nil, err
+			}
+
+			// has result
+			if len(result.Header()) > 0 {
+				return result, nil
+			}
+
+			result.Close()
+		}
+
+		// return an empty result
+		return NewResultStreamBuilder().
+			WithNextFunc(NextNil()).
+			WithHeader(core.Header{"No Results"}).
+			Build(), nil
+	}
+
+	// No transaction - use a dedicated connection from the pool
 	conn, err := c.db.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("c.db.Conn: %w", err)
