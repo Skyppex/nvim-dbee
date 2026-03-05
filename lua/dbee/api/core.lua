@@ -195,4 +195,35 @@ function core.call_store_result(id, format, output, opts)
   state.handler():call_store_result(id, format, output, opts)
 end
 
+---Begin a transaction on connection.
+---Some databases might not support this - in that case, a call to this
+---function returns an error.
+---@param id connection_id
+function core.connection_begin_transaction(id)
+  state.handler():connection_begin_transaction(id)
+end
+
+---Commit current transaction.
+---Some databases might not support this - in that case, a call to this
+---function returns an error.
+---@param id connection_id
+function core.connection_commit_transaction(id)
+  state.handler():connection_commit_transaction(id)
+end
+
+---Rollback current transaction.
+---Some databases might not support this - in that case, a call to this
+---function returns an error.
+---@param id connection_id
+function core.connection_rollback_transaction(id)
+  state.handler():connection_rollback_transaction(id)
+end
+
+---Check if connection has active transaction.
+---@param id connection_id
+---@return boolean
+function core.connection_has_transaction(id)
+  return state.handler():connection_has_transaction(id)
+end
+
 return core

@@ -106,6 +106,7 @@
 ---| '"call_state_changed"' {call}
 ---| '"current_connection_changed"' {conn_id}
 ---| '"database_selected"' {conn_id, database_name}
+---| '"transaction_state_changed"' {conn_id, state}
 
 ---Available editor events.
 ---@alias editor_event_name

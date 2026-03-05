@@ -368,4 +368,29 @@ function Handler:call_store_result(id, format, output, opts)
   })
 end
 
+---Begin a transaction on connection
+---@param id connection_id
+function Handler:connection_begin_transaction(id)
+  vim.fn.DbeeConnectionBeginTransaction(id)
+end
+
+---Commit current transaction
+---@param id connection_id
+function Handler:connection_commit_transaction(id)
+  vim.fn.DbeeConnectionCommitTransaction(id)
+end
+
+---Rollback current transaction
+---@param id connection_id
+function Handler:connection_rollback_transaction(id)
+  vim.fn.DbeeConnectionRollbackTransaction(id)
+end
+
+---Check if connection has active transaction
+---@param id connection_id
+---@return boolean
+function Handler:connection_has_transaction(id)
+  return vim.fn.DbeeConnectionHasTransaction(id)
+end
+
 return Handler
