@@ -178,8 +178,8 @@ function M.query_under_cursor(bufnr)
   -- tmp_buf is a temporary buffer for treesitter to parse the SQL statements
   local tmp_buf = vim.api.nvim_create_buf(false, true)
 
-  -- replace empty lines with semicolons to make sure treesitter parse them
-  -- as statement (still supports newlines between CTEs)
+  -- replace empty lines with semicolons to make sure treesitter parses them
+  -- as statement separators (still supports newlines between CTEs)
   local content = vim.tbl_map(function(line)
     return line ~= "" and line or ";"
   end, lines)
@@ -195,12 +195,52 @@ function M.query_under_cursor(bufnr)
   local root = parser:parse()[1]:root()
 
   for node in root:iter_children() do
-    if node:type() == "statement" then
-      local node_start_row, _, node_end_row, _ = node:range()
-      if cursor_row >= node_start_row and cursor_row <= node_end_row then
+    local node_type = node:type()
+    local node_start_row, _, node_end_row, _ = node:range()
+
+    if cursor_row >= node_start_row and cursor_row <= node_end_row then
+      if node_type == "statement" then
         query = vim.treesitter.get_node_text(node, tmp_buf)
         start_row, end_row = node_start_row, node_end_row
         break
+      elseif node_type == "transaction" then
+        -- Handle transaction blocks: find statement or transaction keyword under cursor
+        -- Statements may be direct children or nested inside ERROR nodes
+        local function find_in_children(parent)
+          for child in parent:iter_children() do
+            local child_type = child:type()
+            local child_start_row, _, child_end_row, _ = child:range()
+
+            if cursor_row >= child_start_row and cursor_row <= child_end_row then
+              if child_type == "statement" then
+                query = vim.treesitter.get_node_text(child, tmp_buf)
+                start_row, end_row = child_start_row, child_end_row
+                return true
+              elseif child_type == "keyword_begin" then
+                query = "BEGIN TRANSACTION"
+                start_row, end_row = child_start_row, child_end_row
+                return true
+              elseif child_type == "keyword_commit" then
+                query = "COMMIT"
+                start_row, end_row = child_start_row, child_end_row
+                return true
+              elseif child_type == "keyword_rollback" then
+                query = "ROLLBACK"
+                start_row, end_row = child_start_row, child_end_row
+                return true
+              elseif child_type == "ERROR" then
+                -- Statements may be nested inside ERROR nodes, search recursively
+                if find_in_children(child) then
+                  return true
+                end
+              end
+            end
+          end
+          return false
+        end
+
+        find_in_children(node)
+        if query ~= "" then break end
       end
     end
   end
