@@ -189,6 +189,7 @@ function M.query_under_cursor(bufnr)
   local parser = vim.treesitter.get_parser(tmp_buf, "sql", {})
   if not parser then
     vim.api.nvim_buf_delete(tmp_buf, { force = true })
+    vim.notify("no treesitter parser found for sql", vim.log.levels.WARN)
     return query, start_row, end_row
   end
 

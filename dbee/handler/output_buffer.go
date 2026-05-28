@@ -1,9 +1,6 @@
 package handler
 
 import (
-	"bufio"
-	"bytes"
-
 	"github.com/neovim/go-client/nvim"
 )
 
@@ -20,38 +17,13 @@ type Buffer struct {
 }
 
 func (b *Buffer) Write(p []byte) (int, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(p))
-	var lines [][]byte
-	for scanner.Scan() {
-		lines = append(lines, []byte(scanner.Text()))
-	}
-
-	const modifiableOptionName = "modifiable"
-
-	// is the buffer modifiable
-	isModifiable := false
-	err := b.vim.BufferOption(b.buffer, modifiableOptionName, &isModifiable)
+	err := b.vim.ExecLua(
+		"local buf = select(1, ...); local text = select(2, ...); vim.api.nvim_buf_set_option(buf, 'modifiable', true); vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(text, '\\n')); vim.api.nvim_buf_set_option(buf, 'modifiable', false)",
+		nil,
+		b.buffer, string(p),
+	)
 	if err != nil {
 		return 0, err
-	}
-
-	if !isModifiable {
-		err = b.vim.SetBufferOption(b.buffer, modifiableOptionName, true)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	err = b.vim.SetBufferLines(b.buffer, 0, -1, true, lines)
-	if err != nil {
-		return 0, err
-	}
-
-	if !isModifiable {
-		err = b.vim.SetBufferOption(b.buffer, modifiableOptionName, false)
-		if err != nil {
-			return 0, err
-		}
 	}
 
 	return len(p), nil

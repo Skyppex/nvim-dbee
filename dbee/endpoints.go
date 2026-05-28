@@ -255,8 +255,7 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 			if err != nil {
 				return nil, err
 			}
-			// Return both the row count and result count
-			return []int{length, resultCount}, nil
+			return []any{length, resultCount}, nil
 		})
 
 	p.RegisterEndpoint(
@@ -312,5 +311,18 @@ func mountEndpoints(p *plugin.Plugin, h *handler.Handler) {
 		},
 		) (bool, error) {
 			return h.ConnectionHasTransaction(args.ID), nil
+		})
+
+
+	p.RegisterEndpoint(
+		"DbeeCallGetCellValue",
+		func(args *struct {
+			ID          core.CallID `msgpack:",array"`
+			ResultIndex int         `msgpack:"result_index"`
+			RowIndex    int         `msgpack:"row_index"`
+			ColIndex    int         `msgpack:"col_index"`
+		},
+		) (any, error) {
+			return h.CallGetCellValue(args.ID, args.ResultIndex, args.RowIndex, args.ColIndex)
 		})
 }

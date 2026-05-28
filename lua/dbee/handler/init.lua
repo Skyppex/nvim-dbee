@@ -342,7 +342,6 @@ function Handler:call_display_result(id, bufnr, from, to, result_index)
   if not ret or ret == vim.NIL then
     return 0, 1
   end
-  -- ret is [length, result_count]
   return ret[1], ret[2]
 end
 
@@ -353,6 +352,14 @@ end
 ---@param format store_format format of the output
 ---@param output store_output where to pipe the results
 ---@param opts { from: integer, to: integer, result_index: integer, extra_arg: any }
+function Handler:call_get_cell_value(id, result_index, row_index, col_index)
+  return vim.fn.DbeeCallGetCellValue(id, {
+    result_index = result_index,
+    row_index = row_index,
+    col_index = col_index,
+  })
+end
+
 function Handler:call_store_result(id, format, output, opts)
   opts = opts or {}
 

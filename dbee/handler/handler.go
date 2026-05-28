@@ -395,20 +395,25 @@ func (h *Handler) CallCancel(callID core.CallID) error {
 // CallDisplayResult displays the result at the given index in the buffer.
 // Returns the total number of rows in the result and the total number of result sets.
 func (h *Handler) CallDisplayResult(callID core.CallID, buffer nvim.Buffer, from, to, resultIndex int) (int, int, error) {
+	h.log.Infof("CallDisplayResult: id=%s from=%d to=%d resultIndex=%d", callID, from, to, resultIndex)
+
 	call, ok := h.lookupCall[callID]
 	if !ok {
 		return 0, 0, fmt.Errorf("unknown call with id: %q", callID)
 	}
+	h.log.Infof("CallDisplayResult: found call, getting result at index %d", resultIndex)
 
 	res, err := call.GetResult(resultIndex)
 	if err != nil {
 		return 0, 0, fmt.Errorf("call.GetResult: %w", err)
 	}
+	h.log.Infof("CallDisplayResult: got result, formatting...")
 
 	text, err := res.Format(newTable(), from, to)
 	if err != nil {
 		return 0, 0, fmt.Errorf("res.Format: %w", err)
 	}
+	h.log.Infof("CallDisplayResult: formatted %d bytes", len(text))
 
 	_, err = newBuffer(h.vim, buffer).Write(text)
 	if err != nil {
@@ -564,4 +569,39 @@ func (h *Handler) ConnectionHasTransaction(connID core.ConnectionID) bool {
 	}
 
 	return c.HasActiveTransaction()
+}
+
+// CallGetCellValue returns the raw value at the given row and column in the result.
+func (h *Handler) CallGetCellValue(callID core.CallID, resultIndex, rowIndex, colIndex int) (any, error) {
+	call, ok := h.lookupCall[callID]
+	if !ok {
+		return nil, fmt.Errorf("unknown call with id: %q", callID)
+	}
+
+	res, err := call.GetResult(resultIndex)
+	if err != nil {
+		return nil, fmt.Errorf("call.GetResult: %w", err)
+	}
+
+	rows, err := res.Rows(rowIndex, rowIndex+1)
+	if err != nil {
+		return nil, fmt.Errorf("res.Rows: %w", err)
+	}
+
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	if colIndex < 0 || colIndex >= len(rows[0]) {
+		return nil, fmt.Errorf("column index out of range: %d", colIndex)
+	}
+
+	val := rows[0][colIndex]
+
+	// Convert []byte to string to avoid msgpack bin encoding issues on the Lua side.
+	if b, ok := val.([]byte); ok {
+		return string(b), nil
+	}
+
+	return val, nil
 }

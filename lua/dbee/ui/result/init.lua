@@ -200,6 +200,7 @@ function ResultUI:display_result(page)
   local to = self.page_size * (page + 1)
 
   -- call go function with result_set_index
+
   local length, result_count =
     self.handler:call_display_result(self.current_call.id, self.bufnr, from, to, self.result_set_index)
 

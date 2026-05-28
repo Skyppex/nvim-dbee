@@ -289,6 +289,13 @@ func (c *Client) getTypeProcessor(typ string) func(any) any {
 		return proc
 	}
 
+	// For known binary types, pass []byte through so the formatter can render as <blob>.
+	if isBinaryType(typ) {
+		return func(val any) any {
+			return val
+		}
+	}
+
 	return func(val any) any {
 		valb, ok := val.([]byte)
 		if ok {
@@ -296,6 +303,17 @@ func (c *Client) getTypeProcessor(typ string) func(any) any {
 		}
 		return val
 	}
+}
+
+// isBinaryType returns true for known database column types that contain binary data.
+func isBinaryType(typ string) bool {
+	upper := strings.ToUpper(typ)
+	switch upper {
+	case "BLOB", "LONGBLOB", "MEDIUMBLOB", "TINYBLOB",
+		"BYTEA", "BINARY", "VARBINARY", "IMAGE", "RAW":
+		return true
+	}
+	return false
 }
 
 // parseRows transforms sql rows to result stream.

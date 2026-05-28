@@ -1,13 +1,5 @@
 local M = {}
 
--- NOTE: don't use vim.notify in loop callbacks
-local function log_error(mes)
-  print("[dbee install - error]: " .. mes)
-end
-local function log_info(mes)
-  print("[dbee install]: " .. mes)
-end
-
 ---@return string _ path to install dir
 function M.dir()
   return vim.fn.stdpath("data") .. "/dbee/bin"
@@ -206,7 +198,6 @@ local function run_jobs(jobs, index)
   if not job then
     return
   end
-  log_info("running command: " .. job.cmd)
   local uv = vim.loop
   -- set env and save the previous values
   -- for some reason setting env on uv.spawn doesnt work
@@ -234,18 +225,15 @@ local function run_jobs(jobs, index)
     handle:close()
     if code == 0 then
       if index >= #jobs then
-        log_info("successfully installed")
         return
       end
       run_jobs(jobs, index + 1)
     else
-      log_error("command: " .. job.cmd .. " exited with code " .. tostring(code))
     end
     cleanup()
   end)
 
   if not handle then
-    log_error("could not spawn command: " .. job.cmd)
     cleanup()
   end
 end
@@ -259,7 +247,6 @@ function M.exec(command)
   for _, j in ipairs(jobs) do
     msg = msg .. " " .. j.cmd
   end
-  log_info("installing dbee with: " .. msg)
 
   run_jobs(jobs, 1)
 end

@@ -191,6 +191,17 @@ end
 ---@param format string format of the output -> "csv"|"json"|"table"
 ---@param output string where to pipe the results -> "file"|"yank"|"buffer"
 ---@param opts { from: integer, to: integer, extra_arg: any }
+---Get a raw cell value at the given row and column.
+---@param id call_id
+---@param result_index integer
+---@param row_index integer 0-based row index
+---@param col_index integer 0-based column index (0 = first header column)
+---@return any
+function core.call_get_cell_value(id, result_index, row_index, col_index)
+  return state.handler():call_get_cell_value(id, result_index, row_index, col_index)
+end
+
+
 function core.call_store_result(id, format, output, opts)
   state.handler():call_store_result(id, format, output, opts)
 end
